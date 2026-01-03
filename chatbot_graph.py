@@ -32,6 +32,8 @@ from serpapi import GoogleSearch
 api_key = os.getenv("SERPAPI_API_KEY")
 print("SERPAPI_API_KEY:", api_key)
 
+print("ANTHROPIC_API_KEY seen by app22:", os.getenv("ANTHROPIC_API_KEY"))
+
 
 
 def live_search(query: str, max_results: int = 5) -> str:
