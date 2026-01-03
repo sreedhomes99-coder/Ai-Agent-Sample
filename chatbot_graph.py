@@ -3,7 +3,6 @@ from duckduckgo_search import DDGS
 from serpapi import GoogleSearch
 
 import os
-
 load_dotenv()
 
 # Check if API key is set
@@ -20,15 +19,20 @@ else:
     # Initialize the LLM
     llm = ChatAnthropic(model="claude-opus-4-5-20251101")
 
-from typing_extensions import TypedDict
+
+from typing import TypedDict, Annotated
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langchain_core.messages import HumanMessage
-from typing import Annotated
+from serpapi import GoogleSearch
+
+# ---- live search (RAG layer) ----
 
 
-class State(TypedDict):
-    messages: Annotated[list, add_messages]
+api_key = os.getenv("SERPAPI_API_KEY")
+print("SERPAPI_API_KEY:", api_key)
+
+
 
 def live_search(query: str, max_results: int = 5) -> str:
     params = {
@@ -37,9 +41,8 @@ def live_search(query: str, max_results: int = 5) -> str:
         "api_key": os.environ["SERPAPI_API_KEY"],
         "num": max_results,
     }
-
-    search = GoogleSearch(params)
-    results = search.get_dict()
+    
+    results = GoogleSearch(params).get_dict()
 
     snippets = []
     for r in results.get("organic_results", []):
@@ -49,47 +52,33 @@ def live_search(query: str, max_results: int = 5) -> str:
 
     return "\n".join(snippets)
 
-def chatbot(state: State) -> State:
-    # last user message
-    user_message = state["messages"][-1].content
+# ---- LangGraph state ----
+class State(TypedDict):
+    messages: Annotated[list, add_messages]
 
-    # 🔍 live search (RAG layer)
+# ---- chatbot node ----
+def chatbot(state: State) -> State:
+    user_message = state["messages"][-1].content
     search_context = live_search(user_message)
 
-    augmented_prompt = f"""
+    prompt = f"""
 You MUST answer ONLY using the search results below.
 If the information is missing or uncertain, say "I don't know".
 
-Search results (live):
+Search results:
 {search_context}
 
 Question:
 {user_message}
 """
 
-    response = llm.invoke([HumanMessage(content=augmented_prompt)])
-
+    response = llm.invoke([HumanMessage(content=prompt)])
     return {"messages": [response]}
 
+# ---- build graph ----
 builder = StateGraph(State)
 builder.add_node("chatbot_node", chatbot)
-
 builder.add_edge(START, "chatbot_node")
 builder.add_edge("chatbot_node", END)
 
 graph = builder.compile()
-
-state = None
-while True:
-    in_message = input("You: ")
-    if in_message.lower() in {"quit","exit"}:
-        break
-    if state is None:
-        state: State = {
-            "messages": [{"role": "user", "content": in_message}]
-        }
-    else:
-        state["messages"].append({"role": "user", "content": in_message})
-
-    state = graph.invoke(state)
-    print("Bot:", state["messages"][-1].content)
