@@ -1,6 +1,9 @@
 import streamlit as st
 from langchain_core.messages import HumanMessage
 
+import os
+print("ANTHROPIC_API_KEY seen by app:", os.getenv("ANTHROPIC_API_KEY"))
+
 # import your existing graph
 from chatbot_graph import graph   # adjust filename if needed
 
